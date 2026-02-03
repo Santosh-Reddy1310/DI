@@ -1,175 +1,318 @@
 import { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
-import { Header } from "@/components/layout/Header";
-import { Footer } from "@/components/layout/Footer";
+import { Link, useParams, useNavigate } from "react-router-dom";
+import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { RecommendationCard } from "@/components/results/RecommendationCard";
 import { ScoresTable } from "@/components/results/ScoresTable";
 import { ScoreChart } from "@/components/results/ScoreChart";
 import { RadarChart } from "@/components/results/RadarChart";
 import { ReasoningAccordion } from "@/components/results/ReasoningAccordion";
 import { AnalysisLoader } from "@/components/results/AnalysisLoader";
+import { FeedbackButton } from "@/components/results/FeedbackButton";
+import { WhatIfSliders } from "@/components/results/WhatIfSliders";
+import { PipelineStages } from "@/components/results/PipelineStages";
+import { ShareDialog } from "@/components/results/ShareDialog";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Download, Share2, RefreshCw } from "lucide-react";
-import type { AnalysisResult } from "@/types/decision";
-
-// Demo result data
-const demoResult: AnalysisResult = {
-  recommendation: {
-    optionId: "3",
-    optionLabel: "Python",
-    confidence: 0.87,
-    summary: "Python offers the best overall balance for your needs. It has strong job market demand, a gentle learning curve, and excellent versatility across domains from web development to data science and AI/ML.",
-  },
-  scores: [
-    {
-      optionId: "1",
-      optionLabel: "Rust",
-      criteriaScores: [
-        { criterionId: "1", criterionName: "Job Market", score: 6 },
-        { criterionId: "2", criterionName: "Learning Curve", score: 4 },
-        { criterionId: "3", criterionName: "Versatility", score: 7 },
-        { criterionId: "4", criterionName: "Community", score: 7 },
-        { criterionId: "5", criterionName: "Future Potential", score: 9 },
-      ],
-      totalScore: 66,
-    },
-    {
-      optionId: "2",
-      optionLabel: "Go",
-      criteriaScores: [
-        { criterionId: "1", criterionName: "Job Market", score: 7 },
-        { criterionId: "2", criterionName: "Learning Curve", score: 7 },
-        { criterionId: "3", criterionName: "Versatility", score: 6 },
-        { criterionId: "4", criterionName: "Community", score: 7 },
-        { criterionId: "5", criterionName: "Future Potential", score: 8 },
-      ],
-      totalScore: 70,
-    },
-    {
-      optionId: "3",
-      optionLabel: "Python",
-      criteriaScores: [
-        { criterionId: "1", criterionName: "Job Market", score: 9 },
-        { criterionId: "2", criterionName: "Learning Curve", score: 9 },
-        { criterionId: "3", criterionName: "Versatility", score: 10 },
-        { criterionId: "4", criterionName: "Community", score: 10 },
-        { criterionId: "5", criterionName: "Future Potential", score: 9 },
-      ],
-      totalScore: 94,
-    },
-  ],
-  reasoning: {
-    decomposition: "The decision was analyzed across five key dimensions: current job market demand, ease of learning within your timeline, versatility across different domains, community support and resources, and future growth potential.",
-    assumptions: [
-      "You have approximately 3 months to achieve basic proficiency",
-      "Job opportunities are a primary motivator for learning",
-      "You have some prior programming experience",
-      "You're open to various domains (web, data, systems)",
-    ],
-    tradeoffs: [
-      "Python sacrifices raw performance for development speed and accessibility",
-      "Rust offers memory safety but requires longer learning investment",
-      "Go provides simplicity but has a smaller ecosystem than Python",
-    ],
-    risks: [
-      "Python's popularity may lead to more competition for entry-level roles",
-      "AI-generated code tools may reduce demand for scripting tasks",
-      "The 3-month timeline may be tight for deep proficiency in any language",
-    ],
-    sensitivity: "The recommendation is stable across most weight variations. Only if 'Learning Curve' weight drops below 4 does Go become competitive. Rust only leads if 'Future Potential' weight exceeds 12.",
-  },
-};
+import { useToast } from "@/hooks/use-toast";
+import { ArrowLeft, Download, Share2, RefreshCw, Home, ChevronRight } from "lucide-react";
+import { getDecision, updateDecisionStatus } from "@/lib/supabase-service";
+import { analyzeDecision } from "@/lib/analysis-service";
+import { exportDecisionToPDF } from "@/lib/pdf-export";
+import type { AnalysisResult, Decision } from "@/types/decision";
 
 export default function DecisionResult() {
+  const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(true);
+  const [isReanalyzing, setIsReanalyzing] = useState(false);
+  const [decision, setDecision] = useState<Decision | null>(null);
   const [result, setResult] = useState<AnalysisResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [isSample, setIsSample] = useState(false);
+  const [showShareDialog, setShowShareDialog] = useState(false);
 
   useEffect(() => {
-    // Simulate loading
-    const timer = setTimeout(() => {
-      setResult(demoResult);
-      setIsLoading(false);
-    }, 3000);
+    if (!id) {
+      navigate("/dashboard");
+      return;
+    }
 
-    return () => clearTimeout(timer);
-  }, []);
+    loadDecision();
+  }, [id]);
+
+  async function loadDecision() {
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      // Check if this is a sample decision
+      const isSampleDecision = id!.startsWith('sample-');
+      setIsSample(isSampleDecision);
+      
+      const decisionData = await getDecision(id!);
+      setDecision(decisionData);
+
+      // Check if analysis is complete
+      if (decisionData.analysis_result) {
+        setResult(decisionData.analysis_result as AnalysisResult);
+      } else if (decisionData.result_json) {
+        setResult(decisionData.result_json as AnalysisResult);
+      } else if (decisionData.status === "analyzing" && !isSampleDecision) {
+        // Poll for result if still analyzing (not for samples)
+        pollForResult();
+      } else if (!isSampleDecision) {
+        setError("This decision hasn't been analyzed yet.");
+      }
+    } catch (err) {
+      console.error("Error loading decision:", err);
+      setError(err instanceof Error ? err.message : "Failed to load decision");
+      toast({
+        title: "Error",
+        description: "Failed to load decision. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function pollForResult() {
+    const maxAttempts = 60; // 3 minutes max
+    let attempts = 0;
+
+    const interval = setInterval(async () => {
+      attempts++;
+
+      try {
+        const decisionData = await getDecision(id!);
+
+        if (decisionData.result_json) {
+          clearInterval(interval);
+          setDecision(decisionData);
+          setResult(decisionData.result_json as AnalysisResult);
+          setIsLoading(false);
+        } else if (decisionData.status !== "analyzing" || attempts >= maxAttempts) {
+          clearInterval(interval);
+          setError("Analysis timed out or failed. Please try again.");
+          setIsLoading(false);
+        }
+      } catch (err) {
+        console.error("Polling error:", err);
+        clearInterval(interval);
+        setError("Failed to check analysis status");
+        setIsLoading(false);
+      }
+    }, 3000); // Poll every 3 seconds
+  }
+
+  async function handleReanalyze() {
+    if (!decision) return;
+
+    setIsReanalyzing(true);
+
+    try {
+      await updateDecisionStatus(decision.id, "analyzing");
+
+      const analysisResult = await analyzeDecision(decision);
+
+      await updateDecisionStatus(decision.id, "done");
+
+      setResult(analysisResult);
+
+      toast({
+        title: "Re-analysis Complete",
+        description: "Your decision has been re-analyzed.",
+      });
+
+      // Reload to get fresh data
+      loadDecision();
+    } catch (err) {
+      console.error("Re-analysis error:", err);
+      toast({
+        title: "Re-analysis Failed",
+        description: err instanceof Error ? err.message : "Please try again.",
+        variant: "destructive",
+      });
+
+      if (decision) {
+        await updateDecisionStatus(decision.id, "draft").catch(console.error);
+      }
+    } finally {
+      setIsReanalyzing(false);
+    }
+  }
+
+  async function handleExportPDF() {
+    if (!decision || !result) return;
+
+    try {
+      await exportDecisionToPDF(decision, result);
+      toast({
+        title: "PDF Exported",
+        description: "Your decision analysis has been downloaded.",
+      });
+    } catch (err) {
+      console.error("PDF export error:", err);
+      toast({
+        title: "Export Failed",
+        description: "Failed to generate PDF. Please try again.",
+        variant: "destructive",
+      });
+    }
+  }
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex flex-col bg-background">
-        <Header />
-        <main className="flex-1 flex items-center justify-center">
+      <div className="min-h-screen flex bg-background">
+        <DashboardSidebar />
+        <div className="flex-1 flex items-center justify-center">
           <AnalysisLoader />
-        </main>
-        <Footer />
+        </div>
       </div>
     );
   }
 
-  if (!result) {
-    return null;
+  if (error || !result || !decision) {
+    return (
+      <div className="min-h-screen flex bg-background">
+        <DashboardSidebar />
+        <div className="flex-1 flex flex-col">
+          <main className="flex-1 container py-8">
+            <div className="max-w-2xl mx-auto text-center py-12">
+              <h1 className="text-2xl font-bold mb-4">Analysis Not Available</h1>
+              <p className="text-muted-foreground mb-6">
+                {error || "This decision hasn't been analyzed yet."}
+              </p>
+              <div className="flex gap-3 justify-center">
+                <Button onClick={() => navigate("/dashboard")} variant="outline">
+                  <ArrowLeft className="h-4 w-4 mr-2" />
+                  Back to Dashboard
+                </Button>
+                {decision && (
+                  <Button onClick={() => navigate(`/decisions/${id}`)}>
+                    Edit Decision
+                  </Button>
+                )}
+              </div>
+            </div>
+          </main>
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-background">
-      <Header />
+    <div className="min-h-screen flex bg-background">
+      <DashboardSidebar />
 
-      <main className="flex-1 container py-8">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-8">
-          <div>
-            <Link
-              to="/dashboard"
-              className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground mb-2"
+      <div className="flex-1 flex flex-col">
+        <main className="flex-1 container py-8">
+          {/* Breadcrumb Navigation */}
+          <nav className="flex items-center gap-2 text-sm text-muted-foreground mb-6" aria-label="Breadcrumb">
+            <Link 
+              to="/dashboard" 
+              className="flex items-center gap-1.5 hover:text-foreground transition-colors"
             >
-              <ArrowLeft className="h-4 w-4" />
-              Back to Dashboard
+              <Home className="h-4 w-4" />
+              Dashboard
             </Link>
-            <h1 className="text-3xl font-bold">Analysis Results</h1>
-            <p className="text-muted-foreground mt-1">
-              Which programming language to learn next?
-            </p>
-          </div>
-          <div className="flex items-center gap-3">
-            <Button variant="outline" className="gap-2">
-              <RefreshCw className="h-4 w-4" />
-              Re-analyze
-            </Button>
-            <Button variant="outline" className="gap-2">
-              <Share2 className="h-4 w-4" />
-              Share
-            </Button>
-            <Button className="gap-2">
-              <Download className="h-4 w-4" />
-              Export PDF
-            </Button>
-          </div>
-        </div>
+            <ChevronRight className="h-4 w-4" />
+            {!isSample && (
+              <>
+                <Link 
+                  to={`/decisions/${id}`} 
+                  className="hover:text-foreground transition-colors truncate max-w-xs"
+                >
+                  {decision?.title || "Decision"}
+                </Link>
+                <ChevronRight className="h-4 w-4" />
+              </>
+            )}
+            <span className="text-foreground font-medium">
+              {isSample ? `${decision?.title || "Example"} (Example)` : "Analysis Results"}
+            </span>
+          </nav>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Main content */}
-          <div className="lg:col-span-2 space-y-6">
-            {/* Recommendation */}
-            <RecommendationCard recommendation={result.recommendation} />
+          {/* Header */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-8">
+            <div>
+              <h1 className="text-3xl font-bold mb-2">Analysis Results</h1>
+              <p className="text-muted-foreground">
+                {decision.title}
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              {!isSample && (
+                <Button 
+                  variant="outline" 
+                  className="gap-2"
+                  onClick={handleReanalyze}
+                  disabled={isReanalyzing}
+                >
+                  <RefreshCw className={`h-4 w-4 ${isReanalyzing ? 'animate-spin' : ''}`} />
+                  {isReanalyzing ? "Re-analyzing..." : "Re-analyze"}
+                </Button>
+              )}
+              <Button 
+                variant="outline" 
+                className="gap-2" 
+                onClick={() => setShowShareDialog(true)}
+              >
+                <Share2 className="h-4 w-4" />
+                Share
+              </Button>
+              <Button className="gap-2 shadow-lg shadow-primary/20" onClick={handleExportPDF}>
+                <Download className="h-4 w-4" />
+                Export PDF
+              </Button>
+            </div>
+          </div>
 
-            {/* Charts */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <ScoreChart scores={result.scores} />
-              <RadarChart scores={result.scores} />
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Main content */}
+            <div className="lg:col-span-2 space-y-6">
+              {/* Recommendation */}
+              <RecommendationCard recommendation={result.recommendation} />
+
+              {/* Charts */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <ScoreChart scores={result.scores} />
+                <RadarChart scores={result.scores} />
+              </div>
+
+              {/* Scores table */}
+              <ScoresTable scores={result.scores} />
+              
+              {/* What-If Analysis */}
+              <WhatIfSliders
+                criteria={decision.criteria}
+                scores={result.scores}
+                onWeightsChange={(newCriteria) => {
+                  // Update is handled internally by the component
+                  console.log("Weights updated:", newCriteria);
+                }}
+              />
             </div>
 
-            {/* Scores table */}
-            <ScoresTable scores={result.scores} />
+            {/* Sidebar - Reasoning */}
+            <div className="space-y-6">
+              <PipelineStages result={result} />
+              <ReasoningAccordion reasoning={result.reasoning} />
+              <FeedbackButton decisionId={decision.id} />
+            </div>
           </div>
+        </main>
 
-          {/* Sidebar - Reasoning */}
-          <div className="space-y-6">
-            <ReasoningAccordion reasoning={result.reasoning} />
-          </div>
-        </div>
-      </main>
-
-      <Footer />
+        {/* Share Dialog */}
+        {decision && result && (
+          <ShareDialog
+            open={showShareDialog}
+            onOpenChange={setShowShareDialog}
+            decision={decision}
+            result={result}
+          />
+        )}
+      </div>
     </div>
   );
 }

@@ -29,6 +29,7 @@ export interface Decision {
   criteria: Criterion[];
   constraints: Constraint[];
   result_json?: AnalysisResult;
+  analysis_result?: AnalysisResult; // For sample decisions
   created_at: string;
   updated_at: string;
   user_id?: string;

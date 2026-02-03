@@ -1,7 +1,7 @@
 import { useState, useReducer } from "react";
-import { useNavigate } from "react-router-dom";
-import { Header } from "@/components/layout/Header";
-import { Footer } from "@/components/layout/Footer";
+import { Link, useNavigate } from "react-router-dom";
+import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
+import { TemplateSelector } from "@/components/wizard/TemplateSelector";
 import { StepIndicator } from "@/components/wizard/StepIndicator";
 import { StepContext } from "@/components/wizard/StepContext";
 import { StepOptions } from "@/components/wizard/StepOptions";
@@ -9,7 +9,13 @@ import { StepCriteria } from "@/components/wizard/StepCriteria";
 import { StepConstraints } from "@/components/wizard/StepConstraints";
 import { StepReview } from "@/components/wizard/StepReview";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, ArrowRight } from "lucide-react";
+import { ArrowLeft, ArrowRight, Home, ChevronRight, Sparkles, FileText } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { analyzeDecision, validateDecisionForAnalysis } from "@/lib/analysis-service";
+import { createDecision, updateDecisionStatus, saveAnalysisResult } from "@/lib/supabase-service";
+import { getTemplateById } from "@/lib/decision-templates";
+import { sendDecisionCompleteNotification } from "@/lib/notification-service";
+import { useAuth } from "@/contexts/AuthContext";
 import type { DecisionFormData, Option, Criterion, Constraint } from "@/types/decision";
 
 type FormAction =
@@ -17,7 +23,8 @@ type FormAction =
   | { type: "SET_CONTEXT"; payload: string }
   | { type: "SET_OPTIONS"; payload: Option[] }
   | { type: "SET_CRITERIA"; payload: Criterion[] }
-  | { type: "SET_CONSTRAINTS"; payload: Constraint[] };
+  | { type: "SET_CONSTRAINTS"; payload: Constraint[] }
+  | { type: "LOAD_TEMPLATE"; payload: DecisionFormData };
 
 const initialState: DecisionFormData = {
   title: "",
@@ -44,6 +51,8 @@ function formReducer(state: DecisionFormData, action: FormAction): DecisionFormD
       return { ...state, criteria: action.payload };
     case "SET_CONSTRAINTS":
       return { ...state, constraints: action.payload };
+    case "LOAD_TEMPLATE":
+      return { ...state, ...action.payload };
     default:
       return state;
   }
@@ -59,9 +68,26 @@ const steps = [
 
 export default function NewDecision() {
   const navigate = useNavigate();
+  const { toast } = useToast();
+  const { user } = useAuth();
   const [currentStep, setCurrentStep] = useState(1);
   const [formData, dispatch] = useReducer(formReducer, initialState);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [progressMessage, setProgressMessage] = useState("");
+  const [currentDecisionId, setCurrentDecisionId] = useState<string | null>(null);
+  const [showTemplateSelector, setShowTemplateSelector] = useState(false);
+
+  const handleSelectTemplate = (templateId: string) => {
+    const template = getTemplateById(templateId);
+    if (template) {
+      dispatch({ type: "LOAD_TEMPLATE", payload: template.template as DecisionFormData });
+      setShowTemplateSelector(false);
+      toast({
+        title: "Template loaded",
+        description: `${template.name} template has been applied. Customize as needed.`,
+      });
+    }
+  };
 
   const canProceed = (): boolean => {
     switch (currentStep) {
@@ -93,10 +119,67 @@ export default function NewDecision() {
   };
 
   const handleAnalyze = async () => {
+    // Validate decision data
+    const validation = validateDecisionForAnalysis(formData);
+    if (!validation.valid) {
+      toast({
+        title: "Invalid Decision",
+        description: validation.errors.join(", "),
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsAnalyzing(true);
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-    navigate("/decisions/demo/result");
+    setProgressMessage("Creating decision...");
+
+    try {
+      // Create decision in Supabase (or use existing if editing)
+      let decisionId = currentDecisionId;
+      if (!decisionId) {
+        const decision = await createDecision(formData);
+        decisionId = decision.id;
+        setCurrentDecisionId(decisionId);
+      }
+
+      // Update status to analyzing
+      await updateDecisionStatus(decisionId, "analyzing");
+
+      // Run AI analysis
+      const result = await analyzeDecision(formData, (message) => {
+        setProgressMessage(message);
+      });
+
+      // Save result to database
+      await saveAnalysisResult(decisionId, result);
+
+      // Send email notification
+      if (user?.id) {
+        await sendDecisionCompleteNotification(user.id, formData.title, decisionId);
+      }
+
+      // Navigate to result page
+      toast({
+        title: "Analysis Complete!",
+        description: "Your decision has been analyzed.",
+      });
+      navigate(`/decisions/${decisionId}/result`);
+    } catch (error) {
+      console.error("Analysis error:", error);
+      toast({
+        title: "Analysis Failed",
+        description: error instanceof Error ? error.message : "Please try again.",
+        variant: "destructive",
+      });
+      
+      // Reset status if we have a decision ID
+      if (currentDecisionId) {
+        await updateDecisionStatus(currentDecisionId, "draft").catch(console.error);
+      }
+    } finally {
+      setIsAnalyzing(false);
+      setProgressMessage("");
+    }
   };
 
   const renderStep = () => {
@@ -144,72 +227,108 @@ export default function NewDecision() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-background">
-      <Header />
+    <div className="min-h-screen flex bg-background">
+      <DashboardSidebar />
 
-      <main className="flex-1 container py-8">
-        <div className="max-w-3xl mx-auto">
-          {/* Header */}
-          <div className="mb-8">
-            <h1 className="text-3xl font-bold mb-2">Create New Decision</h1>
-            <p className="text-muted-foreground">
-              Walk through each step to structure your decision for AI analysis
-            </p>
-          </div>
+      <div className="flex-1 flex flex-col">
+        <main className="flex-1 container py-8">
+          <div className="max-w-3xl mx-auto">
+            {/* Breadcrumb Navigation */}
+            <nav className="flex items-center gap-2 text-sm text-muted-foreground mb-6" aria-label="Breadcrumb">
+              <Link 
+                to="/dashboard" 
+                className="flex items-center gap-1.5 hover:text-foreground transition-colors"
+              >
+                <Home className="h-4 w-4" />
+                Dashboard
+              </Link>
+              <ChevronRight className="h-4 w-4" />
+              <span className="text-foreground font-medium flex items-center gap-1.5">
+                <Sparkles className="h-4 w-4" />
+                New Decision
+              </span>
+            </nav>
 
-          {/* Step indicator */}
-          <StepIndicator steps={steps} currentStep={currentStep} />
+            {/* Header */}
+            <div className="mb-8">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h1 className="text-3xl font-bold mb-2">Create New Decision</h1>
+                  <p className="text-muted-foreground">
+                    Walk through each step to structure your decision for AI analysis
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  className="gap-2"
+                  onClick={() => setShowTemplateSelector(true)}
+                >
+                  <FileText className="h-4 w-4" />
+                  Use Template
+                </Button>
+              </div>
+            </div>
 
-          {/* Step content */}
-          <div className="mt-8 mb-8 animate-fade-in" key={currentStep}>
-            {renderStep()}
-          </div>
+            {/* Step indicator */}
+            <StepIndicator steps={steps} currentStep={currentStep} />
 
-          {/* Navigation buttons */}
-          <div className="flex items-center justify-between pt-6 border-t">
-            <Button
-              variant="ghost"
-              onClick={handleBack}
-              disabled={currentStep === 1}
-              className="gap-2"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              Back
-            </Button>
+            {/* Step content */}
+            <div className="mt-8 mb-8 animate-fade-in" key={currentStep}>
+              {renderStep()}
+            </div>
 
-            {currentStep < steps.length ? (
+            {/* Navigation buttons */}
+            <div className="flex items-center justify-between pt-6 border-t">
               <Button
-                onClick={handleNext}
-                disabled={!canProceed()}
+                variant="ghost"
+                onClick={handleBack}
+                disabled={currentStep === 1}
                 className="gap-2"
               >
-                Next
-                <ArrowRight className="h-4 w-4" />
+                <ArrowLeft className="h-4 w-4" />
+                Back
               </Button>
-            ) : (
-              <Button
-                onClick={handleAnalyze}
-                disabled={isAnalyzing || !canProceed()}
-                className="gap-2"
-              >
-                {isAnalyzing ? (
-                  <>
-                    <div className="h-4 w-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
-                    Analyzing...
-                  </>
-                ) : (
-                  <>
-                    Analyze with AI
-                    <ArrowRight className="h-4 w-4" />
-                  </>
-                )}
-              </Button>
-            )}
-          </div>
-        </div>
-      </main>
 
-      <Footer />
+              {currentStep < steps.length ? (
+                <Button
+                  onClick={handleNext}
+                  disabled={!canProceed()}
+                  className="gap-2"
+                >
+                  Next
+                  <ArrowRight className="h-4 w-4" />
+                </Button>
+              ) : (
+                <Button
+                  onClick={handleAnalyze}
+                  disabled={isAnalyzing || !canProceed()}
+                  className="gap-2"
+                >
+                  {isAnalyzing ? (
+                    <>
+                      <div className="h-4 w-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
+                      {progressMessage || "Analyzing..."}
+                    </>
+                  ) : (
+                    <>
+                      Analyze with AI
+                      <ArrowRight className="h-4 w-4" />
+                    </>
+                  )}
+                </Button>
+              )}
+            </div>
+          </div>
+        </main>
+      </div>
+      
+      {/* Template Selector Modal */}
+      {showTemplateSelector && (
+        <TemplateSelector
+          onSelectTemplate={handleSelectTemplate}
+          onClose={() => setShowTemplateSelector(false)}
+        />
+      )}
     </div>
   );
 }

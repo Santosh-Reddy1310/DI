@@ -1,0 +1,159 @@
+import { useState, useEffect } from "react";
+import { Link, useLocation } from "react-router-dom";
+import { 
+  LayoutDashboard, 
+  Plus, 
+  Settings, 
+  History,
+  ChevronLeft,
+  ChevronRight,
+  LogOut,
+  User
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+import { Logo } from "@/components/ui/logo";
+import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+
+export function DashboardSidebar() {
+  const [collapsed, setCollapsed] = useState(false);
+  const [userName, setUserName] = useState("");
+  const [userEmail, setUserEmail] = useState("");
+  const location = useLocation();
+  const { user, signOut } = useAuth();
+
+  // Load user data
+  useEffect(() => {
+    const loadUserData = async () => {
+      if (!user) return;
+
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (authUser) {
+        setUserName(authUser.user_metadata?.full_name || "User");
+        setUserEmail(authUser.email || "");
+      }
+    };
+
+    loadUserData();
+  }, [user]);
+
+  // Get user initials for avatar
+  const getUserInitials = () => {
+    if (!userName) return "U";
+    const names = userName.split(" ");
+    if (names.length >= 2) {
+      return `${names[0][0]}${names[1][0]}`.toUpperCase();
+    }
+    return userName.substring(0, 2).toUpperCase();
+  };
+
+  const navItems = [
+    { name: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
+    { name: "New Decision", url: "/decisions/new", icon: Plus },
+    { name: "History", url: "/history", icon: History },
+    { name: "Settings", url: "/settings", icon: Settings },
+  ];
+
+  return (
+    <>
+      {/* Sidebar */}
+      <aside
+        className={cn(
+          "fixed left-0 top-0 z-40 h-screen border-r border-border bg-background/95 backdrop-blur-sm transition-all duration-300",
+          collapsed ? "w-16" : "w-64"
+        )}
+      >
+        <div className="flex h-full flex-col">
+          {/* Logo */}
+          <div className="flex h-16 items-center justify-center border-b border-border px-4">
+            <Link to="/" className="flex items-center justify-center">
+              <Logo size="sm" />
+            </Link>
+          </div>
+
+          {/* Navigation */}
+          <nav className="flex-1 space-y-1 p-3 overflow-y-auto">
+            {navItems.map((item) => {
+              const Icon = item.icon;
+              const isActive = location.pathname === item.url;
+
+              return (
+                <Link
+                  key={item.name}
+                  to={item.url}
+                  className={cn(
+                    "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all",
+                    isActive
+                      ? "bg-primary/10 text-primary"
+                      : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                    collapsed && "justify-center"
+                  )}
+                  title={collapsed ? item.name : undefined}
+                >
+                  <Icon className="h-5 w-5 flex-shrink-0" />
+                  {!collapsed && <span>{item.name}</span>}
+                </Link>
+              );
+            })}
+          </nav>
+
+          {/* Footer */}
+          <div className="border-t border-border p-3 space-y-2">
+            {/* User Profile */}
+            <Link
+              to="/settings"
+              className={cn(
+                "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-all hover:bg-accent",
+                collapsed && "justify-center"
+              )}
+              title={collapsed ? userName : undefined}
+            >
+              <Avatar className="h-8 w-8 flex-shrink-0">
+                <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">
+                  {getUserInitials()}
+                </AvatarFallback>
+              </Avatar>
+              {!collapsed && (
+                <div className="flex-1 overflow-hidden">
+                  <p className="text-sm font-medium truncate">{userName}</p>
+                  <p className="text-xs text-muted-foreground truncate">{userEmail}</p>
+                </div>
+              )}
+            </Link>
+
+            {/* Logout Button */}
+            <Button
+              variant="ghost"
+              className={cn(
+                "w-full justify-start gap-3 text-muted-foreground hover:text-foreground",
+                collapsed && "justify-center px-2"
+              )}
+              title={collapsed ? "Logout" : undefined}
+              onClick={signOut}
+            >
+              <LogOut className="h-5 w-5 flex-shrink-0" />
+              {!collapsed && <span>Logout</span>}
+            </Button>
+          </div>
+
+          {/* Toggle button */}
+          <button
+            onClick={() => setCollapsed(!collapsed)}
+            className="absolute -right-3 top-20 flex h-6 w-6 items-center justify-center rounded-full border border-border bg-background shadow-md hover:bg-accent transition-colors"
+          >
+            {collapsed ? (
+              <ChevronRight className="h-4 w-4" />
+            ) : (
+              <ChevronLeft className="h-4 w-4" />
+            )}
+          </button>
+        </div>
+      </aside>
+
+      {/* Spacer to prevent content from going under sidebar */}
+      <div className={cn("transition-all duration-300", collapsed ? "ml-16" : "ml-64")} />
+    </>
+  );
+}

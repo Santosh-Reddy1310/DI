@@ -1,23 +1,12 @@
 import { supabase } from '@/integrations/supabase/client';
 import type { Decision, DecisionFormData, DecisionStatus } from '@/types/decision';
-
-/**
- * Get current user ID from Clerk
- */
-function getCurrentUserId(): string {
-  // This will be set by Clerk
-  const userId = (window as any).__clerk_user_id;
-  if (!userId) {
-    throw new Error('User not authenticated');
-  }
-  return userId;
-}
+import { requireClerkUserId } from './clerk-helpers';
 
 /**
  * Create a new decision in Supabase
  */
 export async function createDecision(data: DecisionFormData): Promise<Decision> {
-  const userId = getCurrentUserId();
+  const userId = requireClerkUserId();
   
   const { data: decision, error } = await supabase
     .from('decisions')

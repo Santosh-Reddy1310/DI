@@ -23,18 +23,18 @@ if (!CLERK_PUBLISHABLE_KEY) {
 }
 
 const App = () => (
-  <ClerkProvider 
-    publishableKey={CLERK_PUBLISHABLE_KEY}
-    signInUrl={import.meta.env.VITE_CLERK_SIGN_IN_URL || "/login"}
-    signUpUrl={import.meta.env.VITE_CLERK_SIGN_UP_URL || "/signup"}
-    afterSignInUrl={import.meta.env.VITE_CLERK_AFTER_SIGN_IN_URL || "/dashboard"}
-    afterSignUpUrl={import.meta.env.VITE_CLERK_AFTER_SIGN_UP_URL || "/dashboard"}
-  >
-    <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <Toaster />
-        <Sonner />
-        <BrowserRouter>
+  <QueryClientProvider client={queryClient}>
+    <TooltipProvider>
+      <Toaster />
+      <Sonner />
+      <BrowserRouter>
+        <ClerkProvider 
+          publishableKey={CLERK_PUBLISHABLE_KEY}
+          signInUrl="/login"
+          signUpUrl="/signup"
+          afterSignInUrl="/dashboard"
+          afterSignUpUrl="/dashboard"
+        >
           <AuthProvider>
             <Routes>
               {/* Public routes */}
@@ -43,7 +43,12 @@ const App = () => (
                 path="/login"
                 element={
                   <div className="min-h-screen flex items-center justify-center bg-background">
-                    <SignIn routing="path" path="/login" signUpUrl="/signup" />
+                    <SignIn 
+                      routing="path" 
+                      path="/login" 
+                      signUpUrl="/signup"
+                      afterSignInUrl="/dashboard"
+                    />
                   </div>
                 }
               />
@@ -51,7 +56,12 @@ const App = () => (
                 path="/signup"
                 element={
                   <div className="min-h-screen flex items-center justify-center bg-background">
-                    <SignUp routing="path" path="/signup" signInUrl="/login" />
+                    <SignUp 
+                      routing="path" 
+                      path="/signup" 
+                      signInUrl="/login"
+                      afterSignUpUrl="/dashboard"
+                    />
                   </div>
                 }
               />
@@ -111,10 +121,10 @@ const App = () => (
               <Route path="*" element={<NotFound />} />
             </Routes>
           </AuthProvider>
-        </BrowserRouter>
-      </TooltipProvider>
-    </QueryClientProvider>
-  </ClerkProvider>
+        </ClerkProvider>
+      </BrowserRouter>
+    </TooltipProvider>
+  </QueryClientProvider>
 );
 
 export default App;

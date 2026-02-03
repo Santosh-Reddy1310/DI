@@ -23,7 +23,13 @@ if (!CLERK_PUBLISHABLE_KEY) {
 }
 
 const App = () => (
-  <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY}>
+  <ClerkProvider 
+    publishableKey={CLERK_PUBLISHABLE_KEY}
+    signInUrl={import.meta.env.VITE_CLERK_SIGN_IN_URL || "/login"}
+    signUpUrl={import.meta.env.VITE_CLERK_SIGN_UP_URL || "/signup"}
+    afterSignInUrl={import.meta.env.VITE_CLERK_AFTER_SIGN_IN_URL || "/dashboard"}
+    afterSignUpUrl={import.meta.env.VITE_CLERK_AFTER_SIGN_UP_URL || "/dashboard"}
+  >
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <Toaster />

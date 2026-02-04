@@ -56,11 +56,28 @@ export default function Dashboard() {
         status: statusFilters.length > 0 ? statusFilters : undefined,
       });
       setDecisions(data);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error loading decisions:", error);
+      
+      // Extract more specific error information
+      let errorMessage = "Failed to load decisions. Please try again.";
+      
+      if (error?.message) {
+        // Check for specific error types
+        if (error.message.includes("schema cache") || error.code === "PGRST205") {
+          errorMessage = "Database is initializing. Please wait a moment and refresh the page.";
+        } else if (error.message.includes("JWT") || error.message.includes("auth")) {
+          errorMessage = "Authentication error. Please try signing out and back in.";
+        } else if (error.message.includes("network") || error.message.includes("fetch")) {
+          errorMessage = "Network error. Please check your connection and try again.";
+        } else {
+          errorMessage = `Error: ${error.message}`;
+        }
+      }
+      
       toast({
-        title: "Error",
-        description: "Failed to load decisions. Please try again.",
+        title: "Error Loading Decisions",
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {

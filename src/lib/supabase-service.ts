@@ -142,7 +142,22 @@ export async function getUserDecisions(userId: string, filters?: {
 
   const { data, error } = await query;
 
-  if (error) throw error;
+  if (error) {
+    // Enhance error message for better debugging
+    console.error('Supabase error details:', {
+      code: error.code,
+      message: error.message,
+      details: error.details,
+      hint: error.hint,
+    });
+    
+    // Throw a more descriptive error
+    const enhancedError = new Error(error.message);
+    (enhancedError as any).code = error.code;
+    (enhancedError as any).details = error.details;
+    throw enhancedError;
+  }
+  
   return data as Decision[];
 }
 

@@ -33,21 +33,22 @@ DROP POLICY IF EXISTS "Users can update constraints for their decisions" ON cons
 DROP POLICY IF EXISTS "Users can delete constraints for their decisions" ON constraints;
 
 -- Create RLS Policies for decisions
+-- Since user_id is text (from Clerk), we compare with auth.uid()::text
 CREATE POLICY "Users can view their own decisions"
   ON decisions FOR SELECT
-  USING (auth.uid()::text = user_id OR auth.uid() = user_id::uuid);
+  USING (auth.uid()::text = user_id);
 
 CREATE POLICY "Users can insert their own decisions"
   ON decisions FOR INSERT
-  WITH CHECK (auth.uid()::text = user_id OR auth.uid() = user_id::uuid);
+  WITH CHECK (auth.uid()::text = user_id);
 
 CREATE POLICY "Users can update their own decisions"
   ON decisions FOR UPDATE
-  USING (auth.uid()::text = user_id OR auth.uid() = user_id::uuid);
+  USING (auth.uid()::text = user_id);
 
 CREATE POLICY "Users can delete their own decisions"
   ON decisions FOR DELETE
-  USING (auth.uid()::text = user_id OR auth.uid() = user_id::uuid);
+  USING (auth.uid()::text = user_id);
 
 -- Create RLS Policies for options
 CREATE POLICY "Users can view options for their decisions"
@@ -56,7 +57,7 @@ CREATE POLICY "Users can view options for their decisions"
     EXISTS (
       SELECT 1 FROM decisions 
       WHERE decisions.id = options.decision_id 
-      AND (decisions.user_id = auth.uid()::text OR decisions.user_id::uuid = auth.uid())
+      AND decisions.user_id = auth.uid()::text
     )
   );
 
@@ -66,7 +67,7 @@ CREATE POLICY "Users can insert options for their decisions"
     EXISTS (
       SELECT 1 FROM decisions 
       WHERE decisions.id = options.decision_id 
-      AND (decisions.user_id = auth.uid()::text OR decisions.user_id::uuid = auth.uid())
+      AND decisions.user_id = auth.uid()::text
     )
   );
 
@@ -76,7 +77,7 @@ CREATE POLICY "Users can update options for their decisions"
     EXISTS (
       SELECT 1 FROM decisions 
       WHERE decisions.id = options.decision_id 
-      AND (decisions.user_id = auth.uid()::text OR decisions.user_id::uuid = auth.uid())
+      AND decisions.user_id = auth.uid()::text
     )
   );
 
@@ -86,7 +87,7 @@ CREATE POLICY "Users can delete options for their decisions"
     EXISTS (
       SELECT 1 FROM decisions 
       WHERE decisions.id = options.decision_id 
-      AND (decisions.user_id = auth.uid()::text OR decisions.user_id::uuid = auth.uid())
+      AND decisions.user_id = auth.uid()::text
     )
   );
 
@@ -97,7 +98,7 @@ CREATE POLICY "Users can view criteria for their decisions"
     EXISTS (
       SELECT 1 FROM decisions 
       WHERE decisions.id = criteria.decision_id 
-      AND (decisions.user_id = auth.uid()::text OR decisions.user_id::uuid = auth.uid())
+      AND decisions.user_id = auth.uid()::text
     )
   );
 
@@ -107,7 +108,7 @@ CREATE POLICY "Users can insert criteria for their decisions"
     EXISTS (
       SELECT 1 FROM decisions 
       WHERE decisions.id = criteria.decision_id 
-      AND (decisions.user_id = auth.uid()::text OR decisions.user_id::uuid = auth.uid())
+      AND decisions.user_id = auth.uid()::text
     )
   );
 
@@ -117,7 +118,7 @@ CREATE POLICY "Users can update criteria for their decisions"
     EXISTS (
       SELECT 1 FROM decisions 
       WHERE decisions.id = criteria.decision_id 
-      AND (decisions.user_id = auth.uid()::text OR decisions.user_id::uuid = auth.uid())
+      AND decisions.user_id = auth.uid()::text
     )
   );
 
@@ -127,7 +128,7 @@ CREATE POLICY "Users can delete criteria for their decisions"
     EXISTS (
       SELECT 1 FROM decisions 
       WHERE decisions.id = criteria.decision_id 
-      AND (decisions.user_id = auth.uid()::text OR decisions.user_id::uuid = auth.uid())
+      AND decisions.user_id = auth.uid()::text
     )
   );
 
@@ -138,7 +139,7 @@ CREATE POLICY "Users can view constraints for their decisions"
     EXISTS (
       SELECT 1 FROM decisions 
       WHERE decisions.id = constraints.decision_id 
-      AND (decisions.user_id = auth.uid()::text OR decisions.user_id::uuid = auth.uid())
+      AND decisions.user_id = auth.uid()::text
     )
   );
 
@@ -148,7 +149,7 @@ CREATE POLICY "Users can insert constraints for their decisions"
     EXISTS (
       SELECT 1 FROM decisions 
       WHERE decisions.id = constraints.decision_id 
-      AND (decisions.user_id = auth.uid()::text OR decisions.user_id::uuid = auth.uid())
+      AND decisions.user_id = auth.uid()::text
     )
   );
 
@@ -158,7 +159,7 @@ CREATE POLICY "Users can update constraints for their decisions"
     EXISTS (
       SELECT 1 FROM decisions 
       WHERE decisions.id = constraints.decision_id 
-      AND (decisions.user_id = auth.uid()::text OR decisions.user_id::uuid = auth.uid())
+      AND decisions.user_id = auth.uid()::text
     )
   );
 
@@ -168,7 +169,7 @@ CREATE POLICY "Users can delete constraints for their decisions"
     EXISTS (
       SELECT 1 FROM decisions 
       WHERE decisions.id = constraints.decision_id 
-      AND (decisions.user_id = auth.uid()::text OR decisions.user_id::uuid = auth.uid())
+      AND decisions.user_id = auth.uid()::text
     )
   );
 
